@@ -1,0 +1,9 @@
+version: '3'
+services:
+  monica-wd19-ttn2ogc-proxy:
+    build: .
+    image: monica-wd19-ttn2ogc-proxy
+    volumes:
+      - ./:/opt/proxy
+    restart: always
+    command: ["python3", "proxy.py", "secrets.json", "datastreams.json"]
