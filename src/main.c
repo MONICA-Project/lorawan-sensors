@@ -8,6 +8,7 @@
 #include "byteorder.h"
 #include "fmt.h"
 #include "periph/gpio.h"
+#include "periph/pm.h"
 #include "periph/rtc.h"
 #include "tfa_thw.h"
 #include "tfa_thw_params.h"
@@ -18,7 +19,7 @@
 #include "config.h"
 #include "lorawan-keys.m01.h"
 
-#define ENABLE_DEBUG        (0)
+#define ENABLE_DEBUG        (1)
 #include "debug.h"
 
 /**
@@ -157,6 +158,7 @@ int main(void)
 
     mpid = thread_getpid();
     bool joined = false;
+    bool sending = false;
     /* Schedule the next wake-up alarm */
 
     set_alarm(1);
@@ -169,11 +171,16 @@ int main(void)
             DEBUG("! ERROR !\n");
             continue;
         }
+        if (sending) {
+            pm_reboot();
+        }
         if (!joined) {
-            printf("%s: init network:\n", __func__);
+            printf("%s: init network ...\n", __func__);
             joined = lorawan_setup(&loramac);
         }
         if (joined) {
+            /* reset alarm */
+            set_alarm(APP_SLEEP_S);
             printf("%s: running ...\n", __func__);
             DEBUG("%s: read data:\n",  __func__);
             //LED3_ON;
@@ -198,7 +205,9 @@ int main(void)
                                    data[1].humidity, &tbuf);
                     }
                     //LED2_ON;
+                    sending = true;
                     lorawan_send(&loramac, tbuf.u8, sizeof(tbuf.u8));
+                    sending = false;
                     //LED2_OFF;
                 }
             }
@@ -207,14 +216,11 @@ int main(void)
             }
             //LED3_OFF;
         }
-        /* Schedule the next wake-up alarm */
-        if(joined) {
-            set_alarm(APP_SLEEP_S);
-        }
         else {
             /* join failed wait 5 min and try again */
             set_alarm(300);
         }
+
     }
 
     return 0;
