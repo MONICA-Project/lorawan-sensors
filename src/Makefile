@@ -15,6 +15,7 @@ USEMODULE += tfa_thw
 
 FEATURES_REQUIRED += periph_gpio
 FEATURES_REQUIRED += periph_rtc
+FEATURES_REQUIRED += periph_eeprom
 
 # enable devel helpers
 DEVELHELP=0

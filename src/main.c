@@ -17,7 +17,7 @@
 #include "semtech_loramac.h"
 
 #include "config.h"
-#include "lorawan-keys.m01.h"
+#include "lorawan-keys.h"
 
 #define ENABLE_DEBUG        (1)
 #include "debug.h"
@@ -51,10 +51,6 @@ tfa_thw_t dev;
 tfa_thw_data_t data[DATALEN];
 
 semtech_loramac_t loramac;
-static uint8_t deveui[LORAMAC_DEVEUI_LEN];
-static uint8_t appeui[LORAMAC_APPEUI_LEN];
-static uint8_t appkey[LORAMAC_APPKEY_LEN];
-
 static volatile kernel_pid_t mpid = KERNEL_PID_UNDEF;
 
 void sensor_setup(void)
@@ -69,36 +65,36 @@ void sensor_setup(void)
     }
 }
 
-bool lorawan_setup(semtech_loramac_t *loramac)
+void lorawan_setup(void)
 {
     DEBUG(". %s\n", __func__);
+    uint8_t devaddr[LORAMAC_DEVADDR_LEN];
+    uint8_t netskey[LORAMAC_NWKSKEY_LEN];
+    uint8_t appskey[LORAMAC_APPSKEY_LEN];
     /* Convert identifiers and application key */
-    fmt_hex_bytes(deveui, LORA_DEVEUI);
-    fmt_hex_bytes(appeui, LORA_APPEUI);
-    fmt_hex_bytes(appkey, LORA_APPKEY);
+    fmt_hex_bytes(devaddr, LORAWAN_DEVADDR);
+    fmt_hex_bytes(netskey, LORAWAN_NETSKEY);
+    fmt_hex_bytes(appskey, LORAWAN_APPSKEY);
 
     /* Initialize the loramac stack */
-    semtech_loramac_init(loramac);
-    semtech_loramac_set_deveui(loramac, deveui);
-    semtech_loramac_set_appeui(loramac, appeui);
-    semtech_loramac_set_appkey(loramac, appkey);
+    semtech_loramac_init(&loramac);
+    semtech_loramac_set_dr(&loramac, LORAWAN_DATARATE);
+    semtech_loramac_set_devaddr(&loramac, devaddr);
+    semtech_loramac_set_nwkskey(&loramac, netskey);
+    semtech_loramac_set_appskey(&loramac, appskey);
+    DEBUG(".. uplink counter %"PRIu32"\n", semtech_loramac_get_uplink_counter(&loramac));
     /* Try to join by Over The Air Activation */
     DEBUG(".. LoRaWAN join: ");
     //LED1_ON;
-    int ret = semtech_loramac_join(loramac, LORAMAC_JOIN_OTAA);
+    int ret = semtech_loramac_join(&loramac, LORAMAC_JOIN_ABP);
     if (ret != SEMTECH_LORAMAC_JOIN_SUCCEEDED) {
-        DEBUG("[FAIL] error %d\n", ret);
-        return false;
+        printf("[FAIL] lorawan join failed with %d\n", ret);
     }
     DEBUG("[DONE]\n");
-    /* set datarate */
-    semtech_loramac_set_dr(loramac, APP_LORAWAN_DATARATE);
-    semtech_loramac_set_tx_mode(loramac, LORAMAC_TX_UNCNF);
-    semtech_loramac_set_tx_port(loramac, APP_LORAWAN_TX_PORT);
-    /* init sensor */
-    sensor_setup();
+    /* set loramac params */
+    semtech_loramac_set_tx_mode(&loramac, LORAMAC_TX_UNCNF);
+    semtech_loramac_set_tx_port(&loramac, LORAWAN_TX_PORT);
     //LED1_OFF;
-    return true;
 }
 
 void create_buf(uint32_t devid, uint16_t windspeed,
@@ -157,9 +153,9 @@ int main(void)
     LED3_OFF;
 
     mpid = thread_getpid();
-    bool joined = false;
-    bool sending = false;
-    /* Schedule the next wake-up alarm */
+
+    lorawan_setup();
+    sensor_setup();
 
     set_alarm(1);
 
@@ -167,60 +163,46 @@ int main(void)
         DEBUG("%s: wait for message.\n", __func__);
         msg_t n;
         msg_receive(&n);
+        /* reset alarm */
+        set_alarm(APP_SLEEP_S);
         if (n.type != APP_MSG_ALARM) {
             DEBUG("! ERROR !\n");
             continue;
         }
-        if (sending) {
-            pm_reboot();
-        }
-        if (!joined) {
-            printf("%s: init network ...\n", __func__);
-            joined = lorawan_setup(&loramac);
-        }
-        if (joined) {
-            /* reset alarm */
-            set_alarm(APP_SLEEP_S);
-            printf("%s: running ...\n", __func__);
-            DEBUG("%s: read data:\n",  __func__);
-            //LED3_ON;
-            if (tfa_thw_read(&dev, data, DATALEN) == 0) {
-                if (data[0].id != data[1].id) {
-                    DEBUG("! id mismatch !\n");
-                }
-                else if (data[0].type == data[1].type) {
-                    DEBUG("! invalid data (1) !\n");
-                }
-                else if ((data[0].type + data[1].type) != 3) {
-                    DEBUG("! invalid data (2) !\n");
+        printf("%s: running ...\n", __func__);
+        DEBUG("%s: read data:\n",  __func__);
+        LED3_ON;
+        if (tfa_thw_read(&dev, data, DATALEN) == 0) {
+            if (data[0].id != data[1].id) {
+                DEBUG("! id mismatch !\n");
+            }
+            else if (data[0].type == data[1].type) {
+                DEBUG("! invalid data (1) !\n");
+            }
+            else if ((data[0].type + data[1].type) != 3) {
+                DEBUG("! invalid data (2) !\n");
+            }
+            else {
+                tfa_thw_lorawan_buf_t tbuf;
+                if (data[0].type == 1) { /* temperature and humidity in data[0] */
+                    create_buf(data[0].id, data[1].tempwind, data[0].tempwind,
+                               data[0].humidity, &tbuf);
                 }
                 else {
-                    tfa_thw_lorawan_buf_t tbuf;
-                    if (data[0].type == 1) { /* temperature and humidity in data[0] */
-                        create_buf(data[0].id, data[1].tempwind, data[0].tempwind,
-                                   data[0].humidity, &tbuf);
-                    }
-                    else {
-                        create_buf(data[0].id, data[0].tempwind, data[1].tempwind,
-                                   data[1].humidity, &tbuf);
-                    }
-                    //LED2_ON;
-                    sending = true;
-                    lorawan_send(&loramac, tbuf.u8, sizeof(tbuf.u8));
-                    sending = false;
-                    //LED2_OFF;
+                    create_buf(data[0].id, data[0].tempwind, data[1].tempwind,
+                               data[1].humidity, &tbuf);
                 }
+                LED2_ON;
+                lorawan_send(&loramac, tbuf.u8, sizeof(tbuf.u8));
+                semtech_loramac_save_config(&loramac);
+                DEBUG(". uplink counter %"PRIu32"\n", semtech_loramac_get_uplink_counter(&loramac));
+                LED2_OFF;
             }
-            else{
-                DEBUG("! ERROR !\n");
-            }
-            //LED3_OFF;
         }
-        else {
-            /* join failed wait 5 min and try again */
-            set_alarm(300);
+        else{
+            DEBUG("! ERROR !\n");
         }
-
+        LED3_OFF;
     }
 
     return 0;
