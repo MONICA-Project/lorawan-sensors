@@ -143,6 +143,17 @@ static void set_alarm(unsigned timeout)
     rtc_set_alarm(&time, rtc_cb, NULL);
 }
 
+static void set_reset(void)
+{
+    DEBUG(". %s\n", __func__);
+    struct tm time;
+    rtc_get_time(&time);
+    /* set initial alarm */
+    time.tm_sec += APP_RESET_S;
+    mktime(&time);
+    rtc_set_alarm(&time, NULL, NULL);
+}
+
 int main(void)
 {
     printf("%s: booting ...\n", __func__);
@@ -163,8 +174,8 @@ int main(void)
         DEBUG("%s: wait for message.\n", __func__);
         msg_t n;
         msg_receive(&n);
-        /* reset alarm */
-        set_alarm(APP_SLEEP_S);
+        /* watchdog reset  */
+        set_reset();
         if (n.type != APP_MSG_ALARM) {
             DEBUG("! ERROR !\n");
             continue;
@@ -203,6 +214,8 @@ int main(void)
             DEBUG("! ERROR !\n");
         }
         LED3_OFF;
+        /* trigger next interval */
+        set_alarm(APP_SLEEP_S);
     }
 
     return 0;
