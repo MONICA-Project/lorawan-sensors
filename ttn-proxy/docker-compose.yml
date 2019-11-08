@@ -1,8 +1,8 @@
 version: '3'
 services:
-  monica-wd19-ttn2ogc-proxy:
+  monica-sensor-proxy:
     build: .
-    image: monica-wd19-ttn2ogc-proxy
+    image: monica-sensor-proxy
     volumes:
       - ./:/opt/proxy
     restart: always

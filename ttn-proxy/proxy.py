@@ -15,11 +15,10 @@ logging.basicConfig(level=logging.DEBUG)
 
 # some global variables
 today = "{0:%Y%m%d}".format(datetime.now())
-f_secrets = "secrets.json"
-f_datasteams = "datastreams.json"
 f_logging = today + "_proxy.log"
 scale = 10.0;
 auth_header = {}
+datastreams = {}
 
 
 def uplink_callback(msg, client):
@@ -48,6 +47,9 @@ def uplink_callback(msg, client):
         data['humidity']    = { 'result': humidity }
         data['windspeed']   = { 'result': windspeed }
         for sensor in datastreams[msg.dev_id]:
+            if windspeed > 200.0 and sensor == 'windspeed':
+                logging.debug("  INVALID windspeed (%s), skipping ...", str(windspeed))
+                continue
             url = datastreams[msg.dev_id][sensor]
             logging.debug("  POST %s to %s", json.dumps(data[sensor]), url)
             r = requests.post(url, json=data[sensor], headers = auth_header)
