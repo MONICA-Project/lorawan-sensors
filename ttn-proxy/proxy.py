@@ -37,7 +37,7 @@ def uplink_callback(msg, client):
     # offset +500 and scale temperature
     temperature = round((temperature - 500) / scale, 2)
     # convert to m/s and scale windspeed
-    windspeed   = round((windspeed * 3.600) / scale, 2)
+    windspeed   = round((windspeed / 3.600) / scale, 2)
 
     logging.info("  DATA: (%s, %s, %s, %s)", devid, humidity, temperature, windspeed)
 
