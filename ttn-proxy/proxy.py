@@ -3,6 +3,7 @@ import argparse
 import base64
 import json
 import logging
+import os
 import requests
 import ttn
 
@@ -16,6 +17,7 @@ logging.basicConfig(level=logging.DEBUG)
 # some global variables
 today = "{0:%Y%m%d}".format(datetime.now())
 f_logging = today + "_proxy.log"
+f_refresh_token = "refresh_token.txt"
 scale = 10.0;
 auth_header = {}
 datastreams = {}
@@ -67,6 +69,9 @@ def get_refresh_token(url, client, secret, username, password):
     body = {"grant_type":'password', "username": username, "password": password, "scope":"offline_access"}
     # send request and return token
     data = requests.post(url, data = body, headers = header)
+    logging.debug("response status: %d", data.status_code)
+    logging.debug("response headers: %s", data.headers)
+    logging.debug("response content: %s", data.text)
     data_json=json.loads(data.content)
     logging.debug("REFRESH TOKEN: %s", data_json)
     return data_json['refresh_token']
@@ -109,7 +114,14 @@ def main():
     # create auth stuff
     if 'keycloak' in secrets:
         kc = secrets['keycloak']
-        rt = get_refresh_token(kc['url'], kc['id_client'], kc['id_secret'], kc['username'], kc['password'])
+        rt = ''
+        if os.path.isfile(f_refresh_token):
+            with open(f_refresh_token, "r") as rtf:
+                rt = rtf.readlines()
+        if len(rt) == 0:
+            rt = get_refresh_token(kc['url'], kc['id_client'], kc['id_secret'], kc['username'], kc['password'])
+            with open(f_refresh_token, "w") as rtf:
+                rtf.write(rt)
         at = get_access_token(kc['url'], kc['id_client'], kc['id_secret'], rt)
         global auth_header
         auth_header = get_auth_header(at)
@@ -125,7 +137,7 @@ def main():
         global datastreams
         datastreams = json.loads(f.read())
 
-    logging.debug("URLS: ", json.dumps(datastreams, indent=2))
+    logging.debug("URLS: %s", json.dumps(datastreams, indent=2))
     with open(f_logging, 'a') as fl:
         print(json.dumps(datastreams), file = fl)
 
